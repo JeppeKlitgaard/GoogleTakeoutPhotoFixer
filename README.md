@@ -7,6 +7,9 @@ In short, it inserts metadata that Google Photos has _detached_ into `.json` fil
 The implementation is relatively fast and safe. I struggled to get existing tools to even work on the raw Takeout archives
 and had little faith in their ability to handle edge-cases like metadata and media being split across archives.
 
+This does not require any complicated setups or intricate pre-steps from the user.
+Simply chuck your takeout archives in a folder and run the tool to get an output directory of fixed photos.
+
 Please report any issues in a reproducible way or submit PR's.
 
 **No guarantees on the correctness of the tools output are made!**
