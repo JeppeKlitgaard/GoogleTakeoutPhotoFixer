@@ -1,6 +1,6 @@
 [package]
 name = "takeout-fixer"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 authors = ["Jeppe Klitgaard <hi@jeppe.science>"]
 rust-version = "1.92"
