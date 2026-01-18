@@ -22,6 +22,7 @@ jobs:
     name: ${{ matrix.target }}
     if: github.repository_owner == 'JeppeKlitgaard' && startsWith(github.event.release.name, 'takeout-fixer')
     runs-on: ${{ matrix.os }}
+    environment: release-plz
     permissions:
       contents: write
     strategy:
