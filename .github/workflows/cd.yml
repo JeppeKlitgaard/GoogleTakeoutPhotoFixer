@@ -20,7 +20,7 @@ defaults:
 jobs:
   upload-assets:
     name: ${{ matrix.target }}
-    if: github.repository_owner == 'JeppeKlitgaard' && startsWith(github.event.release.name, 'takeout-fixer')
+    if: github.repository_owner == 'JeppeKlitgaard'
     runs-on: ${{ matrix.os }}
     environment: release-plz
     permissions:
