@@ -1,0 +1,39 @@
+{
+  "title": "PXL_20250415_160315147.MP.jpg",
+  "description": "",
+  "imageViews": "1",
+  "creationTime": {
+    "timestamp": "1744733723",
+    "formatted": "15. apr. 2025, 16.15.23 UTC"
+  },
+  "photoTakenTime": {
+    "timestamp": "1744732995",
+    "formatted": "15. apr. 2025, 16.03.15 UTC"
+  },
+  "geoData": {
+    "latitude": 55.1195806,
+    "longitude": 14.8301556,
+    "altitude": 136.0,
+    "latitudeSpan": 0.0,
+    "longitudeSpan": 0.0
+  },
+  "geoDataExif": {
+    "latitude": 55.1195806,
+    "longitude": 14.8301556,
+    "altitude": 136.0,
+    "latitudeSpan": 0.0,
+    "longitudeSpan": 0.0
+  },
+  "url": "https://photos.google.com/photo/AF1QipMSdrgdRuHDTZs4mVbY-kqXIsP3k_nQSeWHI4pj",
+  "googlePhotosOrigin": {
+    "mobileUpload": {
+      "deviceFolder": {
+        "localFolderName": ""
+      },
+      "deviceType": "ANDROID_PHONE"
+    }
+  },
+  "appSource": {
+    "androidPackageName": "com.google.android.GoogleCamera"
+  }
+}

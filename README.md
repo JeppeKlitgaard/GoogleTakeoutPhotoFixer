@@ -9,11 +9,13 @@ and had little faith in their ability to handle edge-cases like metadata and med
 
 Please report any issues in a reproducible way or submit PR's.
 
+**No guarantees on the correctness of the tools output are made!**
+
 ## Installation
 
 You can either grab the appropriate executable from the GitHub Releases or install it with `cargo binstall`:
 ```sh
-cargo binstall TODO
+cargo binstall takeout-fixer
 ```
 
 ## Usage
@@ -24,7 +26,7 @@ You may only get a single archive (preferred: `.zip` or `.tar.gz`), or multiple 
 
 ```sh
 takeout-fixer --photo-dir "Google Photos" --output-dir fix MyTakeout
-
+```
 
 ## Alternatives
 

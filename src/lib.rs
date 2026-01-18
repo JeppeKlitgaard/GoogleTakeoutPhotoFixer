@@ -191,7 +191,10 @@ fn load_tar_gz_into_takeout(
         let entry_path = entry
             .path()
             .map_err(|e| TakeoutError::Other(format!("Failed to get path: {}", e)))?;
-        let entry_path_str = entry_path.to_string_lossy().to_string();
+        let mut entry_path_str = entry_path.to_string_lossy().to_string();
+        if let Some(stripped) = entry_path_str.strip_prefix("./") {
+            entry_path_str = stripped.to_string();
+        }
 
         if entry_path_str.starts_with(photo_path_prefix) && entry.header().entry_type().is_file() {
             let archive_file = ArchiveFile::new(

@@ -295,7 +295,10 @@ fn build_metadata_cache(
             let entry_path = entry
                 .path()
                 .map_err(|e| ProcessError::ArchiveError(format!("Failed to get path: {}", e)))?;
-            let entry_path_str = entry_path.to_string_lossy().to_string();
+            let mut entry_path_str = entry_path.to_string_lossy().to_string();
+            if let Some(stripped) = entry_path_str.strip_prefix("./") {
+                entry_path_str = stripped.to_string();
+            }
 
             if wanted_paths.contains(&entry_path_str) {
                 let mut contents = Vec::new();
@@ -489,7 +492,10 @@ pub fn process_takeout(
             let entry_path = entry
                 .path()
                 .map_err(|e| ProcessError::ArchiveError(format!("Failed to get path: {}", e)))?;
-            let entry_path_str = entry_path.to_string_lossy().to_string();
+            let mut entry_path_str = entry_path.to_string_lossy().to_string();
+            if let Some(stripped) = entry_path_str.strip_prefix("./") {
+                entry_path_str = stripped.to_string();
+            }
 
             if !entry_path_str.starts_with(photo_path_prefix) || !is_media_file(&entry_path_str) {
                 std::io::copy(&mut entry, &mut std::io::sink())
