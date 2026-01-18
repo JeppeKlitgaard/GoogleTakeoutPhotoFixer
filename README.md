@@ -25,8 +25,17 @@ You must download your Google Photos data using [Google Takeout](https://takeout
 You may only get a single archive (preferred: `.zip` or `.tar.gz`), or multiple archives. Store all archives in a folder, say `MyTakeout`, then run:
 
 ```sh
-takeout-fixer --photo-dir "Google Photos" --output-dir fix MyTakeout
+takeout-fixer --photo-dir "Google Photos" --output-dir fixed-photos fix MyTakeout
 ```
+
+Where `"Google Photos"` is the name of the folder for your photos inside of the archives beneath the `Takeout` folder.
+This needs to be specified since Google localises this to your account language. As an example, for Danish users an archive will folder structure:
+
+```txt
+takeout-XXXXYYZZTHHMMSSZ-P-123.zip/Takeout/Google Fotos/ALBUMS
+```
+
+Thus if your Google Photos is set up for a Danish account, you would use `--photo-dir "Google Fotos"`.
 
 ## Alternatives
 
