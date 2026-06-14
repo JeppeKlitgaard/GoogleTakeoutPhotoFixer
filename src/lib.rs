@@ -51,7 +51,9 @@ pub fn run(args: cli::Cli) {
             let mut takeout = Takeout::new();
             for file in &expanded_files {
                 println!("\nReading archive: {}", file.display());
-                if let Err(e) = load_archive_into_takeout(&mut takeout, file, &photo_path_prefix, args.debug) {
+                if let Err(e) =
+                    load_archive_into_takeout(&mut takeout, file, &photo_path_prefix, args.debug)
+                {
                     eprintln!("  Error: {}", e);
                     std::process::exit(1);
                 }
@@ -78,11 +80,20 @@ pub fn run(args: cli::Cli) {
                 Ok(stats) => {
                     println!("\n=== Processing Complete ===");
                     println!("Total media processed: {}", stats.images_processed);
-                    println!("Images with metadata applied: {}", stats.images_processed_with_metadata);
-                    println!("Images without metadata: {}", stats.images_processed_without_metadata);
+                    println!(
+                        "Images with metadata applied: {}",
+                        stats.images_processed_with_metadata
+                    );
+                    println!(
+                        "Images without metadata: {}",
+                        stats.images_processed_without_metadata
+                    );
                     println!("Videos copied: {}", stats.videos_copied);
                     println!("Metadata applied: {}", stats.metadata_applied);
-                    println!("Copied without metadata: {}", stats.media_copied_without_metadata);
+                    println!(
+                        "Copied without metadata: {}",
+                        stats.media_copied_without_metadata
+                    );
                     if stats.unused_metadata_files > 0 {
                         println!("Unused metadata files: {}", stats.unused_metadata_files);
                     }
@@ -147,12 +158,8 @@ fn load_zip_into_takeout(
         let entry_path = entry.name().to_string();
 
         if entry_path.starts_with(photo_path_prefix) && !entry.is_dir() {
-            let archive_file = ArchiveFile::new(
-                entry_path.clone(),
-                path.to_path_buf(),
-                i,
-                entry.size(),
-            );
+            let archive_file =
+                ArchiveFile::new(entry_path.clone(), path.to_path_buf(), i, entry.size());
 
             if debug {
                 println!("  Found: {}", entry_path);

@@ -1,5 +1,5 @@
 use crate::archive::{ArchiveFile, Takeout};
-use crate::metadata::{apply_google_metadata, MetadataError};
+use crate::metadata::{MetadataError, apply_google_metadata};
 use flate2::read::GzDecoder;
 use indicatif::{ProgressBar, ProgressStyle};
 use little_exif::filetype::FileExtension;
@@ -107,7 +107,10 @@ fn extract_album_path(archive_path: &str, photo_path_prefix: &str) -> String {
     }
 }
 
-fn read_zip_file_cached(cache: &mut ArchiveCache, file: &ArchiveFile) -> Result<Vec<u8>, ProcessError> {
+fn read_zip_file_cached(
+    cache: &mut ArchiveCache,
+    file: &ArchiveFile,
+) -> Result<Vec<u8>, ProcessError> {
     let archive_name = file
         .source_archive
         .file_name()
@@ -121,7 +124,9 @@ fn read_zip_file_cached(cache: &mut ArchiveCache, file: &ArchiveFile) -> Result<
             let reader = BufReader::new(archive_file);
             let archive = ZipArchive::new(reader)
                 .map_err(|e| ProcessError::ArchiveError(format!("Failed to read zip: {}", e)))?;
-            cache.zip_archives.insert(file.source_archive.clone(), archive);
+            cache
+                .zip_archives
+                .insert(file.source_archive.clone(), archive);
         }
 
         let archive = cache
@@ -150,7 +155,9 @@ fn get_file_extension(path: &str) -> FileExtension {
     if lower.ends_with(".jpg") || lower.ends_with(".jpeg") {
         FileExtension::JPEG
     } else if lower.ends_with(".png") {
-        FileExtension::PNG { as_zTXt_chunk: false }
+        FileExtension::PNG {
+            as_zTXt_chunk: false,
+        }
     } else if lower.ends_with(".webp") {
         FileExtension::WEBP
     } else if lower.ends_with(".jxl") {
@@ -173,7 +180,6 @@ fn process_image_data(
     output_path: &Path,
     debug: bool,
 ) -> Result<bool, ProcessError> {
-
     // Determine file extension for little_exif
     let file_ext = get_file_extension(image_path);
 
@@ -225,7 +231,6 @@ fn process_image_data(
 
 /// Copy a file without modification (for videos, etc.)
 fn copy_file_data(data: Vec<u8>, output_path: &Path, _debug: bool) -> Result<(), ProcessError> {
-
     if let Some(parent) = output_path.parent() {
         fs::create_dir_all(parent)
             .map_err(|e| ProcessError::IoError(format!("Failed to create directory: {}", e)))?;
@@ -282,9 +287,9 @@ fn build_metadata_cache(
         let decoder = GzDecoder::new(reader);
         let mut archive = TarArchive::new(decoder);
 
-        let entries = archive
-            .entries()
-            .map_err(|e| ProcessError::ArchiveError(format!("Failed to read tar entries: {}", e)))?;
+        let entries = archive.entries().map_err(|e| {
+            ProcessError::ArchiveError(format!("Failed to read tar entries: {}", e))
+        })?;
 
         for entry in entries {
             let mut entry = entry
@@ -302,9 +307,9 @@ fn build_metadata_cache(
 
             if wanted_paths.contains(&entry_path_str) {
                 let mut contents = Vec::new();
-                entry
-                    .read_to_end(&mut contents)
-                    .map_err(|e| ProcessError::IoError(format!("Failed to read contents: {}", e)))?;
+                entry.read_to_end(&mut contents).map_err(|e| {
+                    ProcessError::IoError(format!("Failed to read contents: {}", e))
+                })?;
                 let json_str = String::from_utf8(contents).map_err(|e| {
                     ProcessError::IoError(format!("Invalid UTF-8 in metadata: {}", e))
                 })?;
@@ -431,7 +436,13 @@ pub fn process_takeout(
         // Process based on file type
         let result = if is_image_file(&file.archive_path) {
             let image_data = read_zip_file_cached(&mut archive_cache, file)?;
-            process_image_data(&file.archive_path, image_data, metadata_json, &output_path, debug)
+            process_image_data(
+                &file.archive_path,
+                image_data,
+                metadata_json,
+                &output_path,
+                debug,
+            )
         } else {
             // Video or other file - just copy
             let data = read_zip_file_cached(&mut archive_cache, file)?;
@@ -478,9 +489,9 @@ pub fn process_takeout(
         let decoder = GzDecoder::new(reader);
         let mut archive = TarArchive::new(decoder);
 
-        let entries = archive
-            .entries()
-            .map_err(|e| ProcessError::ArchiveError(format!("Failed to read tar entries: {}", e)))?;
+        let entries = archive.entries().map_err(|e| {
+            ProcessError::ArchiveError(format!("Failed to read tar entries: {}", e))
+        })?;
 
         for entry in entries {
             let mut entry = entry
@@ -578,15 +589,21 @@ pub fn process_takeout(
 
             let result = if is_image_file(&entry_path_str) {
                 let mut image_data = Vec::new();
-                entry
-                    .read_to_end(&mut image_data)
-                    .map_err(|e| ProcessError::IoError(format!("Failed to read contents: {}", e)))?;
-                process_image_data(&entry_path_str, image_data, metadata_json, &output_path, debug)
+                entry.read_to_end(&mut image_data).map_err(|e| {
+                    ProcessError::IoError(format!("Failed to read contents: {}", e))
+                })?;
+                process_image_data(
+                    &entry_path_str,
+                    image_data,
+                    metadata_json,
+                    &output_path,
+                    debug,
+                )
             } else {
                 let mut data = Vec::new();
-                entry
-                    .read_to_end(&mut data)
-                    .map_err(|e| ProcessError::IoError(format!("Failed to read contents: {}", e)))?;
+                entry.read_to_end(&mut data).map_err(|e| {
+                    ProcessError::IoError(format!("Failed to read contents: {}", e))
+                })?;
                 copy_file_data(data, &output_path, debug).map(|_| false)
             };
 

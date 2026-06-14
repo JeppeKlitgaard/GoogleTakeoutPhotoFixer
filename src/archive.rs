@@ -240,7 +240,11 @@ mod tests {
 
         assert!(takeout.insert(file).is_ok());
         assert_eq!(takeout.len(), 1);
-        assert!(takeout.get("Takeout/Google Photos/Album/photo.jpg").is_some());
+        assert!(
+            takeout
+                .get("Takeout/Google Photos/Album/photo.jpg")
+                .is_some()
+        );
     }
 
     #[test]

@@ -86,12 +86,14 @@ fn compare_directories(expected: &Path, actual: &Path) {
     for rel in expected_files {
         let expected_path = expected.join(&rel);
         let actual_path = actual.join(&rel);
-        let expected_bytes = fs::read(&expected_path)
-            .unwrap_or_else(|_| panic!("Failed to read expected file: {}", expected_path.display()));
+        let expected_bytes = fs::read(&expected_path).unwrap_or_else(|_| {
+            panic!("Failed to read expected file: {}", expected_path.display())
+        });
         let actual_bytes = fs::read(&actual_path)
             .unwrap_or_else(|_| panic!("Failed to read actual file: {}", actual_path.display()));
         assert_eq!(
-            expected_bytes, actual_bytes,
+            expected_bytes,
+            actual_bytes,
             "File contents differ for {}",
             rel.display()
         );
