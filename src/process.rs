@@ -266,7 +266,7 @@ fn build_metadata_cache(
     let mut metadata_map = HashMap::new();
     let mut tar_metadata_by_archive: HashMap<PathBuf, HashSet<String>> = HashMap::new();
 
-    for meta in takeout.supplemental_metadata_files() {
+    for meta in takeout.metadata_sidecar_candidates() {
         if is_tar_gz_archive(&meta.source_archive) {
             tar_metadata_by_archive
                 .entry(meta.source_archive.clone())
@@ -645,7 +645,7 @@ pub fn process_takeout(
     }
 
     let unused_metadata: Vec<_> = takeout
-        .supplemental_metadata_files()
+        .metadata_sidecar_candidates()
         .filter(|f| !used_metadata.contains(&f.archive_path))
         .collect();
 
@@ -653,11 +653,11 @@ pub fn process_takeout(
 
     if stats.unused_metadata_files > 0 {
         println!(
-            "\nWarning: {} supplemental metadata files were not matched to any media file.",
+            "\nWarning: {} metadata sidecar files were not matched to any media file.",
             stats.unused_metadata_files
         );
         for file in &unused_metadata {
-            println!("  Unused metadata: {}", file.archive_path);
+            println!("  Unused metadata sidecar: {}", file.archive_path);
         }
     }
 

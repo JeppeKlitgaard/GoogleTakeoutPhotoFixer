@@ -1,7 +1,10 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-const SUPPLEMENTAL_SUFFIXES: &[&str] = &[
+const SUPPLEMENTAL_METADATA_SUFFIXES: &[&str] = &[
+    // Google normally emits "photo.jpg.supplemental-metadata.json".
+    // For long filenames it can truncate the supplemental marker at many
+    // different points, so matching tries the longest, most specific suffixes.
     ".supplemental-metadata.",
     ".supplemental-metadat.",
     ".supplemental-metada.",
@@ -25,11 +28,140 @@ const SUPPLEMENTAL_SUFFIXES: &[&str] = &[
     ".s.",
 ];
 
-fn is_supplemental_metadata_path(path: &str) -> bool {
-    let lower = path.to_lowercase();
-    SUPPLEMENTAL_SUFFIXES
+const BARE_METADATA_SUFFIXES: &[&str] = &[
+    // Google also emits bare sidecars such as "photo.jpg.json". A few long
+    // filename cases can show up as "photo.jpg..json"; keep these broad
+    // fallbacks separate from the stricter supplemental suffix check.
+    "..", ".",
+];
+
+fn metadata_sidecar_suffixes() -> impl Iterator<Item = &'static str> {
+    SUPPLEMENTAL_METADATA_SUFFIXES
         .iter()
-        .any(|suffix| lower.ends_with(&format!("{}json", suffix)))
+        .chain(BARE_METADATA_SUFFIXES)
+        .copied()
+}
+
+fn is_google_metadata_sidecar_path(path: &str) -> bool {
+    path.to_ascii_lowercase().ends_with(".json")
+}
+
+fn has_supplemental_metadata_suffix(path: &str) -> bool {
+    let lower = path.to_ascii_lowercase();
+
+    has_standard_supplemental_metadata_suffix(&lower)
+        || has_numbered_supplemental_metadata_suffix(&lower)
+}
+
+fn has_standard_supplemental_metadata_suffix(lower_path: &str) -> bool {
+    SUPPLEMENTAL_METADATA_SUFFIXES
+        .iter()
+        .any(|suffix| lower_path.ends_with(&format!("{}json", suffix)))
+}
+
+fn has_numbered_supplemental_metadata_suffix(lower_path: &str) -> bool {
+    // Duplicate media exports may use "photo(1).jpg" while the JSON keeps the
+    // copy marker after the supplemental suffix:
+    // "photo.jpg.supplemental-metadata(1).json".
+    let Some(before_json) = lower_path.strip_suffix(".json") else {
+        return false;
+    };
+    let Some(before_close) = before_json.strip_suffix(')') else {
+        return false;
+    };
+    let Some(marker_open) = before_close.rfind('(') else {
+        return false;
+    };
+
+    let marker_digits = &before_close[marker_open + 1..];
+    if marker_digits.is_empty() || !marker_digits.chars().all(|ch| ch.is_ascii_digit()) {
+        return false;
+    }
+
+    let before_marker = &before_close[..marker_open];
+    SUPPLEMENTAL_METADATA_SUFFIXES.iter().any(|suffix| {
+        suffix.strip_suffix('.').is_some_and(|suffix_stem| {
+            !suffix_stem.is_empty() && before_marker.ends_with(suffix_stem)
+        })
+    })
+}
+
+fn archive_parent_path(path: &str) -> &str {
+    path.rfind(|ch| ch == '/' || ch == '\\')
+        .map(|index| &path[..index])
+        .unwrap_or("")
+}
+
+fn archive_file_name(path: &str) -> &str {
+    path.rfind(|ch| ch == '/' || ch == '\\')
+        .map(|index| &path[index + 1..])
+        .unwrap_or(path)
+}
+
+fn file_stem(path: &str) -> &str {
+    let file_start = path
+        .rfind(|ch| ch == '/' || ch == '\\')
+        .map_or(0, |index| index + 1);
+    let Some(dot) = path[file_start..].rfind('.') else {
+        return path;
+    };
+
+    &path[..file_start + dot]
+}
+
+fn split_numbered_copy_path(path: &str) -> Option<(String, &str)> {
+    // Turn "photo(1).jpg" into ("photo.jpg", "(1)") so callers can probe the
+    // matching Google metadata spelling.
+    let file_start = path
+        .rfind(|ch| ch == '/' || ch == '\\')
+        .map_or(0, |index| index + 1);
+    let dot = path[file_start..].rfind('.')? + file_start;
+    let stem = &path[..dot];
+    let extension = &path[dot..];
+    let marker_open = stem.rfind('(')?;
+    let marker = &stem[marker_open..];
+
+    if marker.len() <= 2 || !marker.ends_with(')') {
+        return None;
+    }
+
+    let marker_digits = &marker[1..marker.len() - 1];
+    if marker_digits.is_empty() || !marker_digits.chars().all(|ch| ch.is_ascii_digit()) {
+        return None;
+    }
+
+    Some((format!("{}{}", &stem[..marker_open], extension), marker))
+}
+
+fn truncated_metadata_score(photo_name: &str, metadata_name: &str) -> Option<usize> {
+    // Very long names can be shortened by Takeout before ".json", sometimes
+    // losing a final media-stem character or retaining only a fragment of the
+    // original file extension. Restrict this heuristic to long stems and
+    // same-directory candidates to avoid stealing ordinary short-name matches.
+    if !metadata_name.to_ascii_lowercase().ends_with(".json") {
+        return None;
+    }
+
+    let metadata_stem = &metadata_name[..metadata_name.len() - ".json".len()];
+    let photo_stem = file_stem(photo_name);
+
+    if metadata_stem == photo_name {
+        return Some(metadata_stem.chars().count() + 1000);
+    }
+
+    if photo_stem.starts_with(metadata_stem) && metadata_stem.len() >= 32 {
+        return Some(metadata_stem.chars().count());
+    }
+
+    if photo_stem.len() >= 32 {
+        if let Some(rest) = metadata_stem.strip_prefix(photo_stem) {
+            if rest.starts_with('.') && rest.len() <= 5 {
+                return Some(photo_stem.chars().count());
+            }
+        }
+    }
+
+    None
 }
 
 /// Represents a file within an archive, abstracting over the archive format.
@@ -72,14 +204,23 @@ impl ArchiveFile {
             .unwrap_or("")
     }
 
-    /// Checks if this is a JSON metadata file
-    pub fn is_metadata(&self) -> bool {
-        self.archive_path.ends_with(".json")
+    /// Checks if this is a JSON metadata sidecar candidate.
+    ///
+    /// Under the Google Photos export tree, JSON files are treated as possible
+    /// media sidecars. The filename matcher decides later whether a candidate
+    /// actually belongs to a specific media file.
+    pub fn is_google_metadata_sidecar_candidate(&self) -> bool {
+        is_google_metadata_sidecar_path(&self.archive_path)
     }
 
-    /// Checks if this is a supplemental metadata file
+    /// Checks if this is a JSON metadata file.
+    pub fn is_metadata(&self) -> bool {
+        self.is_google_metadata_sidecar_candidate()
+    }
+
+    /// Checks if this has one of Google's supplemental metadata suffixes.
     pub fn is_supplemental_metadata(&self) -> bool {
-        is_supplemental_metadata_path(&self.archive_path)
+        has_supplemental_metadata_suffix(&self.archive_path)
     }
 }
 
@@ -180,9 +321,11 @@ impl Takeout {
         self.files.values()
     }
 
-    /// Returns an iterator over supplemental metadata files in the takeout
-    pub fn supplemental_metadata_files(&self) -> impl Iterator<Item = &ArchiveFile> {
-        self.files.values().filter(|f| f.is_supplemental_metadata())
+    /// Returns an iterator over JSON files that may be Google metadata sidecars.
+    pub fn metadata_sidecar_candidates(&self) -> impl Iterator<Item = &ArchiveFile> {
+        self.files
+            .values()
+            .filter(|f| f.is_google_metadata_sidecar_candidate())
     }
 
     /// Returns the list of source archives
@@ -206,15 +349,66 @@ impl Takeout {
 
     /// Finds a potential metadata file for a given photo file.
     /// Google Takeout uses the pattern: "photo.jpg" -> "photo.jpg.json" or
-    /// "photo.jpg" -> "photo.jpg.supplemental-metadata.json"
+    /// "photo.jpg" -> "photo.jpg.supplemental-metadata.json". It can also
+    /// emit duplicate-numbered metadata and long filenames truncated before
+    /// ".json".
     pub fn find_metadata_for(&self, photo_path: &str) -> Option<&ArchiveFile> {
-        for suffix in SUPPLEMENTAL_SUFFIXES {
+        // Prefer exact path candidates first; these cover normal files and the
+        // simple truncated supplemental suffixes without scanning the archive.
+        for suffix in metadata_sidecar_suffixes() {
             let candidate = format!("{}{}json", photo_path, suffix);
             if let Some(file) = self.files.get(&candidate) {
                 return Some(file);
             }
         }
-        None
+
+        // Then handle duplicate-numbered media, where the "(1)" moves from
+        // the media filename stem to the metadata filename suffix.
+        if let Some((base_photo_path, copy_marker)) = split_numbered_copy_path(photo_path) {
+            for suffix in SUPPLEMENTAL_METADATA_SUFFIXES {
+                let suffix_stem = suffix.strip_suffix('.').unwrap_or(suffix);
+                let candidate = format!("{}{}{}.json", base_photo_path, suffix_stem, copy_marker);
+                if let Some(file) = self.files.get(&candidate) {
+                    return Some(file);
+                }
+            }
+        }
+
+        // Finally fall back to the fuzzy long-name rules. This is intentionally
+        // last because ".json" metadata is otherwise too broad.
+        self.find_truncated_metadata_for(photo_path)
+    }
+
+    fn find_truncated_metadata_for(&self, photo_path: &str) -> Option<&ArchiveFile> {
+        let photo_parent = archive_parent_path(photo_path);
+        let photo_name = archive_file_name(photo_path);
+        let mut best_match: Option<(&ArchiveFile, usize)> = None;
+
+        for file in self.files.values() {
+            if !file.is_google_metadata_sidecar_candidate()
+                || archive_parent_path(&file.archive_path) != photo_parent
+            {
+                continue;
+            }
+
+            let Some(score) = truncated_metadata_score(photo_name, file.file_name()) else {
+                continue;
+            };
+
+            let should_replace = match best_match {
+                None => true,
+                Some((best_file, best_score)) => {
+                    score > best_score
+                        || (score == best_score && file.archive_path < best_file.archive_path)
+                }
+            };
+
+            if should_replace {
+                best_match = Some((file, score));
+            }
+        }
+
+        best_match.map(|(file, _)| file)
     }
 }
 

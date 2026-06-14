@@ -41,6 +41,19 @@ takeout-XXXXYYZZTHHMMSSZ-P-123.zip/Takeout/Google Fotos/ALBUMS
 
 Thus if your Google Photos is set up for a Danish account, you would use `--photo-dir "Google Fotos"`.
 
+## Edge cases handled
+
+Google Takeout sidecar names vary. The matcher handles:
+
+1. Bare JSON sidecars: `photo.jpg.json`.
+2. Full supplemental sidecars: `photo.jpg.supplemental-metadata.json`.
+3. Truncated supplemental suffixes: `photo.jpg.supplemental-metadat.json`, `photo.jpg.supple.json`, `photo.jpg.s.json`.
+4. Duplicate media copy markers: `photo(1).jpg` can match `photo.jpg.supplemental-metadata(1).json`.
+5. Very long filename truncation: metadata may drop a final stem character or retain only part of the original extension before `.json`.
+6. Split archives: media and metadata can be spread across multiple `.zip` or `.tar.gz` files from the same Takeout export.
+
+Exact matches are preferred before fuzzy long-name matching, and fuzzy matches are limited to the same album directory.
+
 ## Alternatives
 
 - [Joshua Holmes' Google Photos Metadata Fix](https://github.com/joshua-holmes/google-photos-metadata-fix)
