@@ -17,6 +17,7 @@ Please report any issues in a reproducible way or submit PR's.
 ## Installation
 
 You can either grab the appropriate executable from the GitHub Releases or install it with `cargo binstall`:
+
 ```sh
 cargo binstall takeout-fixer
 ```
@@ -28,7 +29,7 @@ You must download your Google Photos data using [Google Takeout](https://takeout
 You may only get a single archive (preferred: `.zip` or `.tar.gz`), or multiple archives. Store all archives in a folder, say `MyTakeout`, then run:
 
 ```sh
-takeout-fixer --photo-dir "Google Photos" --output-dir fixed-photos fix MyTakeout
+takeout-fixer --photo-dir "Google Photos" --output fixed-photos fix MyTakeout
 ```
 
 Where `"Google Photos"` is the name of the folder for your photos inside of the archives beneath the `Takeout` folder.
