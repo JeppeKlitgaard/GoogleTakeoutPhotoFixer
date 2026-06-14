@@ -1,5 +1,6 @@
-use little_exif::metadata::Metadata;
+use chrono::{DateTime, Utc};
 use little_exif::exif_tag::ExifTag;
+use little_exif::metadata::Metadata;
 use little_exif::rational::uR64;
 use serde::Deserialize;
 
@@ -172,10 +173,12 @@ pub fn apply_google_metadata(
 
     // Apply photo taken time if present
     if let Some(ref photo_time) = google_meta.photo_taken_time {
-        if let Ok(timestamp) = photo_time.timestamp.parse::<i64>() {
-            let datetime = format_exif_datetime(timestamp);
-            metadata.set_tag(ExifTag::DateTimeOriginal(datetime));
-        }
+        let timestamp = photo_time
+            .timestamp
+            .parse::<i64>()
+            .map_err(|e| MetadataError::InvalidTimestamp(e.to_string()))?;
+        let datetime = format_exif_datetime(timestamp)?;
+        metadata.set_tag(ExifTag::DateTimeOriginal(datetime));
     }
 
     // Apply GPS coordinates if present and valid (non-zero)
@@ -207,66 +210,11 @@ pub fn apply_google_metadata(
 }
 
 /// Formats a Unix timestamp as an EXIF datetime string (YYYY:MM:DD HH:MM:SS)
-fn format_exif_datetime(timestamp: i64) -> String {
+fn format_exif_datetime(timestamp: i64) -> Result<String, MetadataError> {
+    let datetime = DateTime::<Utc>::from_timestamp(timestamp, 0)
+        .ok_or_else(|| MetadataError::InvalidTimestamp(timestamp.to_string()))?;
 
-    // Convert to a simple date/time representation
-    // Note: This is a simplified implementation; for production use chrono crate
-    let secs_since_epoch = timestamp;
-    let days_since_epoch = secs_since_epoch / 86400;
-    let time_of_day = secs_since_epoch % 86400;
-
-    let hours = time_of_day / 3600;
-    let minutes = (time_of_day % 3600) / 60;
-    let seconds = time_of_day % 60;
-
-    // Simplified date calculation (doesn't account for leap years perfectly)
-    let (year, month, day) = days_to_ymd(days_since_epoch);
-
-    format!(
-        "{:04}:{:02}:{:02} {:02}:{:02}:{:02}",
-        year, month, day, hours, minutes, seconds
-    )
-}
-
-/// Converts days since Unix epoch to year, month, day
-fn days_to_ymd(days: i64) -> (i32, u32, u32) {
-    // Start from 1970-01-01
-    let mut remaining_days = days;
-    let mut year = 1970i32;
-
-    // Find the year
-    loop {
-        let days_in_year = if is_leap_year(year) { 366 } else { 365 };
-        if remaining_days < days_in_year {
-            break;
-        }
-        remaining_days -= days_in_year;
-        year += 1;
-    }
-
-    // Find the month and day
-    let days_in_months: [i64; 12] = if is_leap_year(year) {
-        [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
-    } else {
-        [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
-    };
-
-    let mut month = 1u32;
-    for days_in_month in days_in_months.iter() {
-        if remaining_days < *days_in_month {
-            break;
-        }
-        remaining_days -= days_in_month;
-        month += 1;
-    }
-
-    let day = remaining_days as u32 + 1;
-
-    (year, month, day)
-}
-
-fn is_leap_year(year: i32) -> bool {
-    (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)
+    Ok(datetime.format("%Y:%m:%d %H:%M:%S").to_string())
 }
 
 /// Converts decimal degrees to EXIF DMS format (degrees, minutes, seconds as rationals)
@@ -288,9 +236,18 @@ fn decimal_to_dms_exif(decimal: f64, is_latitude: bool) -> (String, Vec<uR64>) {
     let seconds_num = (seconds_float * 1000.0).round() as u32;
 
     let vals = vec![
-        uR64 { nominator: degrees, denominator: 1 },
-        uR64 { nominator: minutes, denominator: 1 },
-        uR64 { nominator: seconds_num, denominator: 1000 },
+        uR64 {
+            nominator: degrees,
+            denominator: 1,
+        },
+        uR64 {
+            nominator: minutes,
+            denominator: 1,
+        },
+        uR64 {
+            nominator: seconds_num,
+            denominator: 1000,
+        },
     ];
 
     (reference.to_string(), vals)
@@ -338,7 +295,7 @@ mod tests {
     #[test]
     fn test_format_exif_datetime() {
         // 1563032119 = 2019-07-13 15:35:19 UTC
-        let result = format_exif_datetime(1563032119);
+        let result = format_exif_datetime(1563032119).unwrap();
         assert_eq!(result, "2019:07:13 15:35:19");
     }
 
@@ -347,7 +304,13 @@ mod tests {
         let (lat_ref, lat_vals) = decimal_to_dms_exif(46.7234, true);
         assert_eq!(lat_ref, "N");
         assert_eq!(lat_vals.len(), 3);
-        assert_eq!(lat_vals[0], uR64 { nominator: 46, denominator: 1 }); // 46 degrees
+        assert_eq!(
+            lat_vals[0],
+            uR64 {
+                nominator: 46,
+                denominator: 1
+            }
+        ); // 46 degrees
 
         let (lon_ref, _) = decimal_to_dms_exif(-17.3456, false);
         assert_eq!(lon_ref, "W");
