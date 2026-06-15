@@ -49,6 +49,7 @@ pub struct ProcessStats {
     pub media_copied_without_metadata: usize,
     pub images_processed_with_metadata: usize,
     pub images_processed_without_metadata: usize,
+    pub images_without_metadata: Vec<String>,
     pub videos_copied: usize,
     pub errors: usize,
 }
@@ -422,6 +423,9 @@ pub fn process_takeout(
                 stats.media_copied_without_metadata += 1;
                 if is_image_file(&file.archive_path) {
                     stats.images_processed_without_metadata += 1;
+                    stats
+                        .images_without_metadata
+                        .push(file.archive_path.clone());
                 } else {
                     stats.videos_copied += 1;
                 }
@@ -457,7 +461,14 @@ pub fn process_takeout(
                     stats.images_processed_with_metadata += 1;
                 } else {
                     stats.media_copied_without_metadata += 1;
-                    stats.images_processed_without_metadata += 1;
+                    if is_image_file(&file.archive_path) {
+                        stats.images_processed_without_metadata += 1;
+                        stats
+                            .images_without_metadata
+                            .push(file.archive_path.clone());
+                    } else {
+                        stats.videos_copied += 1;
+                    }
                 }
             }
             Err(e) => {
@@ -574,6 +585,7 @@ pub fn process_takeout(
                     stats.media_copied_without_metadata += 1;
                     if is_image_file(&entry_path_str) {
                         stats.images_processed_without_metadata += 1;
+                        stats.images_without_metadata.push(entry_path_str.clone());
                     } else {
                         stats.videos_copied += 1;
                     }
@@ -619,6 +631,7 @@ pub fn process_takeout(
                         stats.media_copied_without_metadata += 1;
                         if is_image_file(&entry_path_str) {
                             stats.images_processed_without_metadata += 1;
+                            stats.images_without_metadata.push(entry_path_str.clone());
                         } else {
                             stats.videos_copied += 1;
                         }

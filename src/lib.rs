@@ -21,7 +21,10 @@ pub fn run(args: cli::Cli) {
     }
 
     match args.command {
-        Some(cli::Commands::Fix { paths }) => {
+        Some(cli::Commands::Fix {
+            list_images_without_metadata,
+            paths,
+        }) => {
             // Check if output directory already exists
             if args.output.exists() && !args.dry_run {
                 eprintln!(
@@ -94,6 +97,12 @@ pub fn run(args: cli::Cli) {
                         "Copied without metadata: {}",
                         stats.media_copied_without_metadata
                     );
+                    if list_images_without_metadata && !stats.images_without_metadata.is_empty() {
+                        println!("\nImages without metadata applied:");
+                        for path in &stats.images_without_metadata {
+                            println!("  {}", path);
+                        }
+                    }
                     if stats.unused_metadata_files > 0 {
                         println!("Unused metadata files: {}", stats.unused_metadata_files);
                     }

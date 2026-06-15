@@ -50,6 +50,33 @@ fn run_fix(input: &Path, output: &Path) {
     assert!(status.success(), "takeout-fixer exited with failure");
 }
 
+fn run_fix_output(input: &Path, output: &Path, fix_args: &[&str]) -> std::process::Output {
+    let exe = env!("CARGO_BIN_EXE_takeout-fixer");
+    let mut command = Command::new(exe);
+    command
+        .arg("--no-progress")
+        .arg("--output")
+        .arg(output)
+        .arg("fix");
+
+    for arg in fix_args {
+        command.arg(arg);
+    }
+
+    let output = command
+        .arg(input)
+        .output()
+        .expect("Failed to run takeout-fixer");
+
+    assert!(
+        output.status.success(),
+        "takeout-fixer exited with failure: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    output
+}
+
 fn collect_files(root: &Path) -> BTreeSet<PathBuf> {
     let mut files = BTreeSet::new();
     let mut stack = vec![root.to_path_buf()];
@@ -122,4 +149,40 @@ fn integration_input_gzipped_matches_expected_output() {
 
     run_fix(&input, &output);
     compare_directories(&expected, &output);
+}
+
+#[test]
+fn fix_lists_images_without_metadata_by_default() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let input = root.join("test_data").join("input_zipped");
+    let temp = TempDir::new("list-without-metadata");
+    let output = temp.output_path();
+
+    let command_output = run_fix_output(&input, &output, &[]);
+    let stdout = String::from_utf8_lossy(&command_output.stdout);
+
+    assert!(
+        stdout.contains("Images without metadata applied:"),
+        "missing images-without-metadata heading in stdout:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("Takeout/Google Photos/Album 1/PXL_20250415_161127194.jpg"),
+        "missing unmatched image path in stdout:\n{stdout}"
+    );
+}
+
+#[test]
+fn fix_can_suppress_images_without_metadata_list() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let input = root.join("test_data").join("input_zipped");
+    let temp = TempDir::new("suppress-list-without-metadata");
+    let output = temp.output_path();
+
+    let command_output = run_fix_output(&input, &output, &["--no-list-images-without-metadata"]);
+    let stdout = String::from_utf8_lossy(&command_output.stdout);
+
+    assert!(
+        !stdout.contains("Images without metadata applied:"),
+        "unexpected images-without-metadata heading in stdout:\n{stdout}"
+    );
 }
