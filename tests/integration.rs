@@ -152,37 +152,62 @@ fn integration_input_gzipped_matches_expected_output() {
 }
 
 #[test]
-fn fix_lists_images_without_metadata_by_default() {
+fn fix_applies_video_metadata_timestamp() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let input = root.join("test_data").join("input_zipped");
-    let temp = TempDir::new("list-without-metadata");
+    let temp = TempDir::new("video-metadata");
+    let output = temp.output_path();
+
+    run_fix(&input, &output);
+
+    let video_path = output.join("Album 1").join("clip-with-metadata.mp4");
+    let modified = fs::metadata(&video_path)
+        .unwrap_or_else(|_| panic!("Failed to read metadata for {}", video_path.display()))
+        .modified()
+        .expect("Failed to read video modified timestamp")
+        .duration_since(UNIX_EPOCH)
+        .expect("Video modified timestamp is before Unix epoch")
+        .as_secs();
+
+    assert_eq!(modified, 1563032119);
+}
+
+#[test]
+fn fix_lists_media_without_metadata_by_default() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let input = root.join("test_data").join("input_zipped");
+    let temp = TempDir::new("list-media-without-metadata");
     let output = temp.output_path();
 
     let command_output = run_fix_output(&input, &output, &[]);
     let stdout = String::from_utf8_lossy(&command_output.stdout);
 
     assert!(
-        stdout.contains("Images without metadata applied:"),
-        "missing images-without-metadata heading in stdout:\n{stdout}"
+        stdout.contains("Media without metadata applied:"),
+        "missing media-without-metadata heading in stdout:\n{stdout}"
     );
     assert!(
         stdout.contains("Takeout/Google Photos/Album 1/PXL_20250415_161127194.jpg"),
         "missing unmatched image path in stdout:\n{stdout}"
     );
+    assert!(
+        stdout.contains("Takeout/Google Photos/Album 1/unmatched-video.mp4"),
+        "missing unmatched video path in stdout:\n{stdout}"
+    );
 }
 
 #[test]
-fn fix_can_suppress_images_without_metadata_list() {
+fn fix_can_suppress_media_without_metadata_list() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let input = root.join("test_data").join("input_zipped");
-    let temp = TempDir::new("suppress-list-without-metadata");
+    let temp = TempDir::new("suppress-list-media-without-metadata");
     let output = temp.output_path();
 
-    let command_output = run_fix_output(&input, &output, &["--no-list-images-without-metadata"]);
+    let command_output = run_fix_output(&input, &output, &["--no-list-media-without-metadata"]);
     let stdout = String::from_utf8_lossy(&command_output.stdout);
 
     assert!(
-        !stdout.contains("Images without metadata applied:"),
-        "unexpected images-without-metadata heading in stdout:\n{stdout}"
+        !stdout.contains("Media without metadata applied:"),
+        "unexpected media-without-metadata heading in stdout:\n{stdout}"
     );
 }

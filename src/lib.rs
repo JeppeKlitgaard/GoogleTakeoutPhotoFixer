@@ -22,7 +22,7 @@ pub fn run(args: cli::Cli) {
 
     match args.command {
         Some(cli::Commands::Fix {
-            list_images_without_metadata,
+            list_media_without_metadata,
             paths,
         }) => {
             // Check if output directory already exists
@@ -82,7 +82,7 @@ pub fn run(args: cli::Cli) {
             ) {
                 Ok(stats) => {
                     println!("\n=== Processing Complete ===");
-                    println!("Total media processed: {}", stats.images_processed);
+                    println!("Total media processed: {}", stats.media_processed);
                     println!(
                         "Images with metadata applied: {}",
                         stats.images_processed_with_metadata
@@ -91,15 +91,22 @@ pub fn run(args: cli::Cli) {
                         "Images without metadata: {}",
                         stats.images_processed_without_metadata
                     );
-                    println!("Videos copied: {}", stats.videos_copied);
+                    println!(
+                        "Videos with metadata applied: {}",
+                        stats.videos_processed_with_metadata
+                    );
+                    println!(
+                        "Videos without metadata: {}",
+                        stats.videos_processed_without_metadata
+                    );
                     println!("Metadata applied: {}", stats.metadata_applied);
                     println!(
                         "Copied without metadata: {}",
                         stats.media_copied_without_metadata
                     );
-                    if list_images_without_metadata && !stats.images_without_metadata.is_empty() {
-                        println!("\nImages without metadata applied:");
-                        for path in &stats.images_without_metadata {
+                    if list_media_without_metadata && !stats.media_without_metadata.is_empty() {
+                        println!("\nMedia without metadata applied:");
+                        for path in &stats.media_without_metadata {
                             println!("  {}", path);
                         }
                     }
@@ -164,7 +171,7 @@ fn load_zip_into_takeout(
         let entry = archive
             .by_index(i)
             .map_err(|e| TakeoutError::Other(format!("Failed to read entry: {}", e)))?;
-        let entry_path = entry.name().to_string();
+        let entry_path = entry.name().replace('\\', "/");
 
         if entry_path.starts_with(photo_path_prefix) && !entry.is_dir() {
             let archive_file =

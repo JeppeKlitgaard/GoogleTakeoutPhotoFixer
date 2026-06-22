@@ -34,9 +34,13 @@ pub struct Cli {
 pub enum Commands {
     /// Fixes Google Takeout photo metadata issues
     Fix {
-        /// Do not list images that were copied without applying metadata
-        #[arg(long = "no-list-images-without-metadata", action = clap::ArgAction::SetFalse, default_value_t = true)]
-        list_images_without_metadata: bool,
+        /// Do not list media that were copied without applying metadata
+        #[arg(
+            long = "no-list-media-without-metadata",
+            action = clap::ArgAction::SetFalse,
+            default_value_t = true
+        )]
+        list_media_without_metadata: bool,
 
         /// Paths to .zip or .tar.gz files, directories containing them, or glob patterns like *.zip
         #[arg(required = true, num_args = 1.., value_parser = validate_path)]

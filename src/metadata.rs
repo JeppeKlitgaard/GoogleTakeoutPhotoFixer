@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, SecondsFormat, Utc};
 use little_exif::exif_tag::ExifTag;
 use little_exif::metadata::Metadata;
 use little_exif::rational::uR64;
@@ -15,7 +15,7 @@ pub struct GoogleTimestamp {
 }
 
 /// Represents geo data in Google's supplemental metadata format
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct GeoData {
     pub latitude: f64,
@@ -131,19 +131,17 @@ impl std::fmt::Display for MetadataError {
 
 impl std::error::Error for MetadataError {}
 
-/// Parses Google supplemental metadata JSON and updates an existing Metadata object.
-///
-/// # Arguments
-/// * `json` - The JSON string containing Google supplemental metadata
-/// * `metadata` - The existing Metadata object to update
-///
-/// # Returns
-/// The updated Metadata object, or an error if parsing fails
-pub fn apply_google_metadata(
-    json: &str,
-    mut metadata: Metadata,
-) -> Result<Metadata, MetadataError> {
-    let google_meta: GoogleSupplementalMetadata = serde_json::from_str(json).map_err(|e| {
+#[derive(Debug, Clone, PartialEq)]
+pub struct GoogleVideoMetadata {
+    pub title: String,
+    pub description: Option<String>,
+    pub timestamp: Option<i64>,
+    pub xmp_datetime: Option<String>,
+    pub geo_data: Option<GeoData>,
+}
+
+fn parse_google_metadata(json: &str) -> Result<GoogleSupplementalMetadata, MetadataError> {
+    serde_json::from_str(json).map_err(|e| {
         let error_msg = e.to_string();
         // Check if it's an unknown field error
         if error_msg.contains("unknown field") {
@@ -164,7 +162,62 @@ pub fn apply_google_metadata(
                 json: json.to_string(),
             }
         }
-    })?;
+    })
+}
+
+fn parse_google_timestamp(timestamp: &GoogleTimestamp) -> Result<i64, MetadataError> {
+    timestamp
+        .timestamp
+        .parse::<i64>()
+        .map_err(|e| MetadataError::InvalidTimestamp(e.to_string()))
+}
+
+pub fn google_media_timestamp(json: &str) -> Result<Option<i64>, MetadataError> {
+    let google_meta = parse_google_metadata(json)?;
+    google_meta
+        .photo_taken_time
+        .as_ref()
+        .or(google_meta.creation_time.as_ref())
+        .map(parse_google_timestamp)
+        .transpose()
+}
+
+pub fn google_video_metadata(json: &str) -> Result<GoogleVideoMetadata, MetadataError> {
+    let google_meta = parse_google_metadata(json)?;
+    let timestamp = google_meta
+        .photo_taken_time
+        .as_ref()
+        .or(google_meta.creation_time.as_ref())
+        .map(parse_google_timestamp)
+        .transpose()?;
+    let xmp_datetime = timestamp.map(format_xmp_datetime).transpose()?;
+    let geo_data = google_meta
+        .geo_data_exif
+        .or(google_meta.geo_data)
+        .filter(|geo| geo.latitude != 0.0 || geo.longitude != 0.0 || geo.altitude != 0.0);
+
+    Ok(GoogleVideoMetadata {
+        title: google_meta.title,
+        description: (!google_meta.description.is_empty()).then_some(google_meta.description),
+        timestamp,
+        xmp_datetime,
+        geo_data,
+    })
+}
+
+/// Parses Google supplemental metadata JSON and updates an existing Metadata object.
+///
+/// # Arguments
+/// * `json` - The JSON string containing Google supplemental metadata
+/// * `metadata` - The existing Metadata object to update
+///
+/// # Returns
+/// The updated Metadata object, or an error if parsing fails
+pub fn apply_google_metadata(
+    json: &str,
+    mut metadata: Metadata,
+) -> Result<Metadata, MetadataError> {
+    let google_meta = parse_google_metadata(json)?;
 
     // Apply description if present and non-empty
     if !google_meta.description.is_empty() {
@@ -173,10 +226,7 @@ pub fn apply_google_metadata(
 
     // Apply photo taken time if present
     if let Some(ref photo_time) = google_meta.photo_taken_time {
-        let timestamp = photo_time
-            .timestamp
-            .parse::<i64>()
-            .map_err(|e| MetadataError::InvalidTimestamp(e.to_string()))?;
+        let timestamp = parse_google_timestamp(photo_time)?;
         let datetime = format_exif_datetime(timestamp)?;
         metadata.set_tag(ExifTag::DateTimeOriginal(datetime));
     }
@@ -215,6 +265,13 @@ fn format_exif_datetime(timestamp: i64) -> Result<String, MetadataError> {
         .ok_or_else(|| MetadataError::InvalidTimestamp(timestamp.to_string()))?;
 
     Ok(datetime.format("%Y:%m:%d %H:%M:%S").to_string())
+}
+
+fn format_xmp_datetime(timestamp: i64) -> Result<String, MetadataError> {
+    let datetime = DateTime::<Utc>::from_timestamp(timestamp, 0)
+        .ok_or_else(|| MetadataError::InvalidTimestamp(timestamp.to_string()))?;
+
+    Ok(datetime.to_rfc3339_opts(SecondsFormat::Secs, true))
 }
 
 /// Converts decimal degrees to EXIF DMS format (degrees, minutes, seconds as rationals)
@@ -321,5 +378,33 @@ mod tests {
         let metadata = Metadata::new();
         let result = apply_google_metadata(SAMPLE_JSON, metadata);
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_google_media_timestamp_prefers_photo_taken_time() {
+        let timestamp = google_media_timestamp(SAMPLE_JSON).unwrap();
+        assert_eq!(timestamp, Some(1563032119));
+    }
+
+    #[test]
+    fn test_google_media_timestamp_falls_back_to_creation_time() {
+        let json = r#"{
+            "title": "video.mp4",
+            "creationTime": {
+                "timestamp": "1587036746",
+                "formatted": "16. apr. 2020, 11.32.26 UTC"
+            },
+            "photoTakenTime": null,
+            "geoData": {
+                "latitude": 0.0,
+                "longitude": 0.0,
+                "altitude": 0.0,
+                "latitudeSpan": 0.0,
+                "longitudeSpan": 0.0
+            }
+        }"#;
+
+        let timestamp = google_media_timestamp(json).unwrap();
+        assert_eq!(timestamp, Some(1587036746));
     }
 }

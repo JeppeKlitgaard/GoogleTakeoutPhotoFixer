@@ -1,0 +1,20 @@
+{
+  "title": "clip-with-metadata.mp4",
+  "description": "",
+  "creationTime": {
+    "timestamp": "1587036746",
+    "formatted": "16. apr. 2020, 11.32.26 UTC"
+  },
+  "photoTakenTime": {
+    "timestamp": "1563032119",
+    "formatted": "13. jul. 2019, 15.35.19 UTC"
+  },
+  "geoData": {
+    "latitude": 0.0,
+    "longitude": 0.0,
+    "altitude": 0.0,
+    "latitudeSpan": 0.0,
+    "longitudeSpan": 0.0
+  },
+  "url": "https://photos.google.com/photo/video-test"
+}
