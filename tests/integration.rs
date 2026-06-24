@@ -258,6 +258,8 @@ fn fix_writes_album_metadata_outputs_by_default() {
     assert!(summary.contains("# Album Metadata Summary"));
     assert!(summary.contains("## Holiday Album"));
     assert!(summary.contains("Source: `Takeout/Google Photos/Album 1/metadata.json`"));
+    assert!(summary.contains("Title: Holiday Album"));
+    assert!(summary.contains("Description: Trip notes"));
     assert!(summary.contains("| description | Trip notes |"));
 
     let copied_metadata = output.join("Album 1").join("metadata.json");

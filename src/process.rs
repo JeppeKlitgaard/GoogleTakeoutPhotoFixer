@@ -893,6 +893,12 @@ fn album_summary_title(album_path: &str, json: &serde_json::Value) -> String {
     }
 }
 
+fn album_summary_description(json: &serde_json::Value) -> Option<&str> {
+    json.get("description")
+        .and_then(|value| value.as_str())
+        .filter(|description| !description.trim().is_empty())
+}
+
 fn build_album_metadata_markdown(files: &[AlbumMetadataFile]) -> String {
     let mut markdown = String::from("# Album Metadata Summary\n\n");
     markdown.push_str("Generated from Google Takeout album metadata files.\n");
@@ -910,6 +916,10 @@ fn build_album_metadata_markdown(files: &[AlbumMetadataFile]) -> String {
                 markdown.push_str(&format!("\n## {}\n\n", title));
                 markdown.push_str(&format!("Album path: `{}`\n\n", file.album_path));
                 markdown.push_str(&format!("Source: `{}`\n\n", file.archive_path));
+                markdown.push_str(&format!("Title: {}\n\n", title));
+                if let Some(description) = album_summary_description(&json) {
+                    markdown.push_str(&format!("Description: {}\n\n", description));
+                }
 
                 if let serde_json::Value::Object(fields) = json {
                     if !fields.is_empty() {
