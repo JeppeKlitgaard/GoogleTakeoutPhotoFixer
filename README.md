@@ -44,6 +44,11 @@ Thus if your Google Photos is set up for a Danish account, you would use `--phot
 By default, the final summary lists any media files copied without matched metadata. Use
 `--no-list-media-without-metadata` after `fix` to suppress that list.
 
+By default, album `metadata.json` files are handled separately from media sidecars. The tool writes an
+`album-metadata.md` summary at the output root and copies each album metadata JSON file into the matching
+output album directory unchanged. Use `--no-album-metadata-summary` or `--no-copy-album-metadata-json`
+after `fix` to disable either output.
+
 ## Edge cases handled
 
 Google Takeout sidecar names vary. The matcher handles:

@@ -46,6 +46,10 @@ fn is_google_metadata_sidecar_path(path: &str) -> bool {
     path.to_ascii_lowercase().ends_with(".json")
 }
 
+fn is_album_metadata_path(path: &str) -> bool {
+    archive_file_name(path).eq_ignore_ascii_case("metadata.json")
+}
+
 fn has_supplemental_metadata_suffix(path: &str) -> bool {
     let lower = path.to_ascii_lowercase();
 
@@ -210,7 +214,12 @@ impl ArchiveFile {
     /// media sidecars. The filename matcher decides later whether a candidate
     /// actually belongs to a specific media file.
     pub fn is_google_metadata_sidecar_candidate(&self) -> bool {
-        is_google_metadata_sidecar_path(&self.archive_path)
+        is_google_metadata_sidecar_path(&self.archive_path) && !self.is_album_metadata()
+    }
+
+    /// Checks if this is an album metadata file.
+    pub fn is_album_metadata(&self) -> bool {
+        is_album_metadata_path(&self.archive_path)
     }
 
     /// Checks if this is a JSON metadata file.
@@ -326,6 +335,11 @@ impl Takeout {
         self.files
             .values()
             .filter(|f| f.is_google_metadata_sidecar_candidate())
+    }
+
+    /// Returns an iterator over album metadata files.
+    pub fn album_metadata_files(&self) -> impl Iterator<Item = &ArchiveFile> {
+        self.files.values().filter(|f| f.is_album_metadata())
     }
 
     /// Returns the list of source archives
@@ -513,5 +527,43 @@ mod tests {
         let found = takeout.find_metadata_for("Takeout/Google Photos/photo.jpg");
         assert!(found.is_some());
         assert!(found.unwrap().is_supplemental_metadata());
+    }
+
+    #[test]
+    fn album_metadata_files_are_not_media_sidecar_candidates() {
+        let metadata = ArchiveFile::new(
+            "Takeout/Google Photos/Album/metadata.json".to_string(),
+            PathBuf::from("archive1.zip"),
+            0,
+            128,
+        );
+
+        assert!(metadata.is_album_metadata());
+        assert!(!metadata.is_google_metadata_sidecar_candidate());
+        assert!(!metadata.is_metadata());
+    }
+
+    #[test]
+    fn album_metadata_files_are_listed_separately() {
+        let mut takeout = Takeout::new();
+        takeout
+            .insert(ArchiveFile::new(
+                "Takeout/Google Photos/Album/metadata.json".to_string(),
+                PathBuf::from("archive1.zip"),
+                0,
+                128,
+            ))
+            .unwrap();
+        takeout
+            .insert(ArchiveFile::new(
+                "Takeout/Google Photos/Album/photo.jpg.json".to_string(),
+                PathBuf::from("archive1.zip"),
+                1,
+                128,
+            ))
+            .unwrap();
+
+        assert_eq!(takeout.album_metadata_files().count(), 1);
+        assert_eq!(takeout.metadata_sidecar_candidates().count(), 1);
     }
 }

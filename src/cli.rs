@@ -34,6 +34,22 @@ pub struct Cli {
 pub enum Commands {
     /// Fixes Google Takeout photo metadata issues
     Fix {
+        /// Do not write a Markdown summary of album metadata
+        #[arg(
+            long = "no-album-metadata-summary",
+            action = clap::ArgAction::SetFalse,
+            default_value_t = true
+        )]
+        album_metadata_summary: bool,
+
+        /// Do not copy album metadata JSON files into the output albums
+        #[arg(
+            long = "no-copy-album-metadata-json",
+            action = clap::ArgAction::SetFalse,
+            default_value_t = true
+        )]
+        copy_album_metadata_json: bool,
+
         /// Do not list media that were copied without applying metadata
         #[arg(
             long = "no-list-media-without-metadata",

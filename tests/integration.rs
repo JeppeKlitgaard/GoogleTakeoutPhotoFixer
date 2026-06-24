@@ -1,5 +1,6 @@
 use std::collections::BTreeSet;
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -75,6 +76,27 @@ fn run_fix_output(input: &Path, output: &Path, fix_args: &[&str]) -> std::proces
     );
 
     output
+}
+
+fn write_album_metadata_archive(path: &Path, file_name: &str, metadata_json: &[u8]) {
+    let file = fs::File::create(path).expect("Failed to create test archive");
+    let mut zip = zip::ZipWriter::new(file);
+    let options = zip::write::SimpleFileOptions::default();
+
+    zip.start_file(
+        format!("Takeout/Google Photos/Album 1/{file_name}"),
+        options,
+    )
+    .expect("Failed to add album metadata to test archive");
+    zip.write_all(metadata_json)
+        .expect("Failed to write album metadata to test archive");
+
+    zip.start_file("Takeout/Google Photos/Album 1/photo.jpg", options)
+        .expect("Failed to add media to test archive");
+    zip.write_all(b"not-a-real-jpeg")
+        .expect("Failed to write media to test archive");
+
+    zip.finish().expect("Failed to finish test archive");
 }
 
 fn collect_files(root: &Path) -> BTreeSet<PathBuf> {
@@ -210,4 +232,66 @@ fn fix_can_suppress_media_without_metadata_list() {
         !stdout.contains("Media without metadata applied:"),
         "unexpected media-without-metadata heading in stdout:\n{stdout}"
     );
+}
+
+#[test]
+fn fix_writes_album_metadata_outputs_by_default() {
+    let temp = TempDir::new("album-metadata-defaults");
+    let input = temp.base.join("takeout.zip");
+    let output = temp.output_path();
+    let metadata_json = br#"{
+        "title": "Holiday Album",
+        "description": "Trip notes",
+        "date": {
+            "timestamp": "1704067200",
+            "formatted": "1 Jan 2024"
+        }
+    }"#;
+
+    write_album_metadata_archive(&input, "metadata.json", metadata_json);
+    let command_output = run_fix_output(&input, &output, &[]);
+    let stdout = String::from_utf8_lossy(&command_output.stdout);
+
+    let summary_path = output.join("album-metadata.md");
+    let summary = fs::read_to_string(&summary_path)
+        .unwrap_or_else(|_| panic!("Failed to read summary: {}", summary_path.display()));
+    assert!(summary.contains("# Album Metadata Summary"));
+    assert!(summary.contains("## Holiday Album"));
+    assert!(summary.contains("Source: `Takeout/Google Photos/Album 1/metadata.json`"));
+    assert!(summary.contains("| description | Trip notes |"));
+
+    let copied_metadata = output.join("Album 1").join("metadata.json");
+    let copied_bytes = fs::read(&copied_metadata)
+        .unwrap_or_else(|_| panic!("Failed to read metadata: {}", copied_metadata.display()));
+    assert_eq!(copied_bytes, metadata_json);
+
+    assert!(
+        !stdout.contains("Unused metadata sidecar: Takeout/Google Photos/Album 1/metadata.json"),
+        "album metadata should not be reported as unused metadata:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("Album metadata files: 1"),
+        "summary count missing from stdout:\n{stdout}"
+    );
+}
+
+#[test]
+fn fix_can_suppress_album_metadata_outputs() {
+    let temp = TempDir::new("album-metadata-suppressed");
+    let input = temp.base.join("takeout.zip");
+    let output = temp.output_path();
+    let metadata_json = br#"{"title":"Hidden Album"}"#;
+
+    write_album_metadata_archive(&input, "metadata.json", metadata_json);
+    run_fix_output(
+        &input,
+        &output,
+        &[
+            "--no-album-metadata-summary",
+            "--no-copy-album-metadata-json",
+        ],
+    );
+
+    assert!(!output.join("album-metadata.md").exists());
+    assert!(!output.join("Album 1").join("metadata.json").exists());
 }

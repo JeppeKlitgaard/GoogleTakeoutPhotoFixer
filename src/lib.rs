@@ -22,6 +22,8 @@ pub fn run(args: cli::Cli) {
 
     match args.command {
         Some(cli::Commands::Fix {
+            album_metadata_summary,
+            copy_album_metadata_json,
             list_media_without_metadata,
             paths,
         }) => {
@@ -79,10 +81,13 @@ pub fn run(args: cli::Cli) {
                 args.dry_run,
                 args.debug,
                 show_progress,
+                album_metadata_summary,
+                copy_album_metadata_json,
             ) {
                 Ok(stats) => {
                     println!("\n=== Processing Complete ===");
                     println!("Total media processed: {}", stats.media_processed);
+                    println!("Album metadata files: {}", stats.album_metadata_files);
                     println!(
                         "Images with metadata applied: {}",
                         stats.images_processed_with_metadata

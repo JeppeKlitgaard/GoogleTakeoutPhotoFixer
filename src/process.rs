@@ -52,6 +52,7 @@ pub struct ProcessStats {
     pub images_skipped: usize,
     pub metadata_applied: usize,
     pub unused_metadata_files: usize,
+    pub album_metadata_files: usize,
     pub media_copied_without_metadata: usize,
     pub images_processed_with_metadata: usize,
     pub images_processed_without_metadata: usize,
@@ -753,6 +754,216 @@ fn build_metadata_cache(
 
     Ok(metadata_map)
 }
+
+#[derive(Debug)]
+struct AlbumMetadataFile {
+    archive_path: String,
+    album_path: String,
+    file_name: String,
+    data: Vec<u8>,
+}
+
+fn read_tar_entries(
+    archive_path: &Path,
+    wanted_paths: &HashSet<String>,
+) -> Result<HashMap<String, Vec<u8>>, ProcessError> {
+    let file = File::open(archive_path)
+        .map_err(|e| ProcessError::IoError(format!("Failed to open archive: {}", e)))?;
+    let reader = BufReader::new(file);
+    let decoder = GzDecoder::new(reader);
+    let mut archive = TarArchive::new(decoder);
+
+    let entries = archive
+        .entries()
+        .map_err(|e| ProcessError::ArchiveError(format!("Failed to read tar entries: {}", e)))?;
+
+    let mut found = HashMap::new();
+    for entry in entries {
+        let mut entry = entry
+            .map_err(|e| ProcessError::ArchiveError(format!("Failed to read entry: {}", e)))?;
+        if !entry.header().entry_type().is_file() {
+            continue;
+        }
+
+        let entry_path = entry
+            .path()
+            .map_err(|e| ProcessError::ArchiveError(format!("Failed to get path: {}", e)))?;
+        let mut entry_path_str = entry_path.to_string_lossy().to_string();
+        if let Some(stripped) = entry_path_str.strip_prefix("./") {
+            entry_path_str = stripped.to_string();
+        }
+
+        if wanted_paths.contains(&entry_path_str) {
+            let mut contents = Vec::new();
+            entry
+                .read_to_end(&mut contents)
+                .map_err(|e| ProcessError::IoError(format!("Failed to read contents: {}", e)))?;
+            found.insert(entry_path_str, contents);
+        } else {
+            std::io::copy(&mut entry, &mut std::io::sink())
+                .map_err(|e| ProcessError::IoError(format!("Failed to skip entry: {}", e)))?;
+        }
+    }
+
+    Ok(found)
+}
+
+fn archive_path_file_name(path: &str) -> String {
+    path.rfind(|ch| ch == '/' || ch == '\\')
+        .map(|index| &path[index + 1..])
+        .unwrap_or(path)
+        .to_string()
+}
+
+fn read_album_metadata_files(
+    takeout: &Takeout,
+    archive_cache: &mut ArchiveCache,
+    photo_path_prefix: &str,
+) -> Result<Vec<AlbumMetadataFile>, ProcessError> {
+    let mut files = Vec::new();
+    let mut tar_files_by_archive: HashMap<PathBuf, HashSet<String>> = HashMap::new();
+
+    for file in takeout.album_metadata_files() {
+        if is_tar_gz_archive(&file.source_archive) {
+            tar_files_by_archive
+                .entry(file.source_archive.clone())
+                .or_default()
+                .insert(file.archive_path.clone());
+        } else if is_zip_archive(&file.source_archive) {
+            files.push(AlbumMetadataFile {
+                archive_path: file.archive_path.clone(),
+                album_path: extract_album_path(&file.archive_path, photo_path_prefix),
+                file_name: file.file_name().to_string(),
+                data: read_zip_file_cached(archive_cache, file)?,
+            });
+        }
+    }
+
+    for (archive_path, wanted_paths) in tar_files_by_archive {
+        let found = read_tar_entries(&archive_path, &wanted_paths)?;
+        for file_path in wanted_paths {
+            if let Some(data) = found.get(&file_path) {
+                files.push(AlbumMetadataFile {
+                    archive_path: file_path.clone(),
+                    album_path: extract_album_path(&file_path, photo_path_prefix),
+                    file_name: archive_path_file_name(&file_path),
+                    data: data.clone(),
+                });
+            }
+        }
+    }
+
+    files.sort_by(|a, b| a.archive_path.cmp(&b.archive_path));
+    Ok(files)
+}
+
+fn markdown_heading_text(text: &str) -> String {
+    if text.is_empty() {
+        "Root".to_string()
+    } else {
+        text.to_string()
+    }
+}
+
+fn markdown_table_value(value: &serde_json::Value) -> String {
+    let rendered = match value {
+        serde_json::Value::Null => "null".to_string(),
+        serde_json::Value::Bool(value) => value.to_string(),
+        serde_json::Value::Number(value) => value.to_string(),
+        serde_json::Value::String(value) => value.clone(),
+        serde_json::Value::Array(values) => format!("{} item(s)", values.len()),
+        serde_json::Value::Object(values) => format!("{} field(s)", values.len()),
+    };
+
+    rendered
+        .replace('\r', " ")
+        .replace('\n', " ")
+        .replace('|', "\\|")
+}
+
+fn album_summary_title(album_path: &str, json: &serde_json::Value) -> String {
+    if let Some(title) = json
+        .get("title")
+        .and_then(|value| value.as_str())
+        .filter(|title| !title.trim().is_empty())
+    {
+        title.to_string()
+    } else {
+        markdown_heading_text(album_path)
+    }
+}
+
+fn build_album_metadata_markdown(files: &[AlbumMetadataFile]) -> String {
+    let mut markdown = String::from("# Album Metadata Summary\n\n");
+    markdown.push_str("Generated from Google Takeout album metadata files.\n");
+
+    if files.is_empty() {
+        markdown.push_str("\nNo album metadata files were found.\n");
+        return markdown;
+    }
+
+    for file in files {
+        let json_text = String::from_utf8_lossy(&file.data);
+        match serde_json::from_str::<serde_json::Value>(&json_text) {
+            Ok(json) => {
+                let title = album_summary_title(&file.album_path, &json);
+                markdown.push_str(&format!("\n## {}\n\n", title));
+                markdown.push_str(&format!("Album path: `{}`\n\n", file.album_path));
+                markdown.push_str(&format!("Source: `{}`\n\n", file.archive_path));
+
+                if let serde_json::Value::Object(fields) = json {
+                    if !fields.is_empty() {
+                        markdown.push_str("| Field | Value |\n| --- | --- |\n");
+                        for (key, value) in fields {
+                            markdown.push_str(&format!(
+                                "| {} | {} |\n",
+                                key.replace('|', "\\|"),
+                                markdown_table_value(&value)
+                            ));
+                        }
+                    }
+                } else {
+                    markdown.push_str(&format!("Value: `{}`\n", markdown_table_value(&json)));
+                }
+            }
+            Err(error) => {
+                markdown.push_str(&format!(
+                    "\n## {}\n\n",
+                    markdown_heading_text(&file.album_path)
+                ));
+                markdown.push_str(&format!("Album path: `{}`\n\n", file.album_path));
+                markdown.push_str(&format!("Source: `{}`\n\n", file.archive_path));
+                markdown.push_str(&format!(
+                    "Could not parse album metadata JSON for summary: `{}`\n",
+                    error
+                ));
+            }
+        }
+    }
+
+    markdown
+}
+
+fn copy_album_metadata_files(
+    files: &[AlbumMetadataFile],
+    output_dir: &Path,
+) -> Result<(), ProcessError> {
+    for file in files {
+        let output_path = output_dir.join(&file.album_path).join(&file.file_name);
+        write_file_data(file.data.clone(), &output_path)?;
+    }
+
+    Ok(())
+}
+
+fn write_album_metadata_summary(
+    files: &[AlbumMetadataFile],
+    output_dir: &Path,
+) -> Result<(), ProcessError> {
+    let markdown = build_album_metadata_markdown(files);
+    write_file_data(markdown.into_bytes(), &output_dir.join("album-metadata.md"))
+}
+
 /// Process all files in the takeout and output to the specified directory
 pub fn process_takeout(
     takeout: &Takeout,
@@ -761,12 +972,42 @@ pub fn process_takeout(
     dry_run: bool,
     debug: bool,
     show_progress: bool,
+    write_album_summary: bool,
+    copy_album_json: bool,
 ) -> Result<ProcessStats, ProcessError> {
     let mut stats = ProcessStats::default();
     let mut used_metadata = HashSet::new();
     let mut archive_cache = ArchiveCache::new();
 
     let metadata_cache = build_metadata_cache(takeout, &mut archive_cache)?;
+    let album_metadata_files =
+        read_album_metadata_files(takeout, &mut archive_cache, photo_path_prefix)?;
+    stats.album_metadata_files = album_metadata_files.len();
+
+    if !album_metadata_files.is_empty() && (write_album_summary || copy_album_json) {
+        if dry_run {
+            if write_album_summary {
+                println!(
+                    "\n[DRY RUN] Would write album metadata summary for {} file(s) to {}",
+                    album_metadata_files.len(),
+                    output_dir.join("album-metadata.md").display()
+                );
+            }
+            if copy_album_json {
+                println!(
+                    "[DRY RUN] Would copy {} album metadata file(s) into output albums",
+                    album_metadata_files.len()
+                );
+            }
+        } else {
+            if write_album_summary {
+                write_album_metadata_summary(&album_metadata_files, output_dir)?;
+            }
+            if copy_album_json {
+                copy_album_metadata_files(&album_metadata_files, output_dir)?;
+            }
+        }
+    }
 
     // Collect all media files (non-metadata files)
     let media_files: Vec<_> = takeout
