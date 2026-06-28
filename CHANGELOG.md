@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.6](https://github.com/JeppeKlitgaard/GoogleTakeoutPhotoFixer/compare/v0.1.5...v0.1.6) - 2026-06-28
+
+### Added
+
+- include title, desc more prominently in album summary
+- album metadata
+- metadata for videos
+- ability to list images without metadata
+
+### Fixed
+
+- improve metadata matching
+
+### Other
+
+- *(deps)* bump actions/checkout from 6 to 7
+- use chrono instead of own calendar
+- format
+- wrong cli flag for --output
+- sales pitch
+
 ## [0.1.5](https://github.com/JeppeKlitgaard/GoogleTakeoutPhotoFixer/compare/v0.1.4...v0.1.5) - 2026-01-18
 
 ### Other
